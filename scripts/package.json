@@ -6,5 +6,8 @@
   "dependencies": {
     "@plurnk/plurnk-mimetypes-embeddings": "^0.5.0",
     "umap-js": "^1.4.0"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.61.1"
   }
 }

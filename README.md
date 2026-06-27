@@ -6,16 +6,27 @@ Open `index.html` in any browser, or host the folder on any static host (GitHub 
 
 ## Features
 
-### 🔎 Ask bar (natural-language search)
+### 🔎 Ask bar (natural-language + semantic search)
 Type things like:
+- *“event sourcing”* · *“keeping humans in the loop”* · *“making models cheaper and faster”*
 - *“voice agents on day 2 in the afternoon, sorted by time”*
-- *“RAG and retrieval keynotes”*
 - *“short lightning talks on security”*
 
-The query is translated into structured filters + a relevance search and applied to the list, with a transparent banner showing how it was interpreted.
+The query is translated into structured filters + a hybrid relevance search, with a transparent banner showing how it was interpreted.
 
-- **Works out of the box** with an on-device parser (synonyms, days, times, types, durations, tracks, tags, sort, view, favorites) — no key, no network.
-- **Optional Claude upgrade**: add an Anthropic API key in *Settings* to have `claude-haiku-4-5` interpret free-form requests. The key is stored only in your browser and called directly from the page; it gracefully falls back to the on-device parser if anything fails.
+- **Hybrid ranking**: a keyword scorer (over titles, speakers, tags, and LLM-extracted keyphrases) is fused with **in-browser semantic search** via Reciprocal Rank Fusion — so a query like *“event sourcing”* surfaces relevant talks even with no exact word match. Semantic-only hits are flagged *✦ related*.
+- **Fully on-device**: the embedding model (`all-MiniLM-L6-v2`, ~25 MB) loads from a CDN on first semantic search and is cached; corpus vectors ship pre-computed in `data/vectors.js`. Works with no key. Toggle it in *Settings*; it degrades to keyword search while loading or offline.
+- **Optional Claude upgrade**: add an Anthropic API key in *Settings* to have `claude-haiku-4-5` interpret free-form requests. Stored only in your browser; falls back to the on-device parser.
+
+### 🗺 Vector map (cluster explorer)
+A 2-D map of all 563 talks projected from their embeddings (UMAP), so semantically similar talks sit together.
+- **Color** by theme cluster (20 auto-labeled regions), talk type, or day; legend entries toggle visibility.
+- **Hover** for a summary, **click** to open the talk, hover to see its nearest neighbors linked.
+- Sidebar **filters and search dim the map live**; **lasso-select** talks to add them to My Events or filter to them.
+- Zoom (scroll) and pan (drag); fully offline once `data/vectors.js` is loaded.
+
+### 🔗 More like this
+Every talk's detail drawer shows its **theme cluster** and a **Related talks** strip (precomputed nearest neighbors), plus clickable **key topics** that launch a new search.
 
 ### 🎛 Rich filtering & sorting
 - **Day** · **Type** (keynote / session / workshop / sponsor / special) · **Time of day** · **Length** · **Track topic** · **Room / stage** · **Tags** (searchable) · **Speaker / org** · quick toggles (favorites-only, has-abstract, hide-tentative).
@@ -42,8 +53,11 @@ The query is translated into structured filters + a relevance search and applied
 | --- | --- |
 | `index.html` | Markup & layout |
 | `styles.css` | Design system & responsive styles |
-| `app.js` | All behavior (search, filters, views, favorites, export) |
+| `app.js` | All behavior (hybrid search, filters, views, vector map, favorites, export) |
 | `data.js` | The 563 talks + facet indexes, embedded as `window.AIEWF` |
+| `data/enriched.js` | LLM keyphrases, entities & summaries per talk (`window.AIEWF_ENRICH`) |
+| `data/vectors.js` | Quantized embeddings, map coords, clusters, neighbors (`window.AIEWF_VEC`, lazy-loaded) |
+| `scripts/` | Offline build pipeline that generates the `data/` artifacts (see `scripts/README.md`) |
 
 `data.js` is generated from the official schedule JSON; embedding it as a JS global keeps the app working from `file://` without any server or CORS setup.
 

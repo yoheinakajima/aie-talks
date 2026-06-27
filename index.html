@@ -48,6 +48,7 @@
       <input id="ask-input" type="text" autocomplete="off" spellcheck="false"
              placeholder="Show me all the talks about…  (e.g. “voice agents on day 2 in the afternoon, sorted by time”)" />
       <button id="ask-clear" class="ask-clear" hidden aria-label="Clear">×</button>
+      <button id="ask-sem" class="ask-sem" title="Semantic search status" hidden></button>
       <button id="ask-go" class="ask-go" aria-label="Search">
         <svg class="ask-go-icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         <span class="ask-go-text">Search</span>
@@ -84,6 +85,7 @@
       <button data-view="list" title="List"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
       <button data-view="grid" title="Grid"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
       <button data-view="compact" title="Compact"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M3 9h18M3 13h18M3 17h18M3 21h18"/></svg></button>
+      <button data-view="map" title="Vector map · explore clusters"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="2"/><circle cx="17" cy="5" r="2"/><circle cx="18" cy="16" r="2"/><circle cx="8" cy="17" r="2"/><circle cx="12" cy="11" r="2"/></svg></button>
     </div>
   </div>
 </div>
@@ -107,6 +109,41 @@
 
   <main class="results-area">
     <div id="results" class="results"></div>
+
+    <!-- ====== VECTOR MAP VIEW ====== -->
+    <div id="map-wrap" class="map-wrap" hidden>
+      <div class="map-toolbar">
+        <div class="map-tb-group">
+          <span class="map-tb-label">Color</span>
+          <select id="map-color">
+            <option value="cluster">Theme cluster</option>
+            <option value="type">Talk type</option>
+            <option value="day">Day</option>
+          </select>
+        </div>
+        <div class="map-tb-group">
+          <button id="map-lasso" class="ghost-btn map-tool" title="Lasso-select talks">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11a8 4 0 1016 0 8 4 0 10-16 0"/><path d="M5 14c0 2 2 3 2 5a2 2 0 11-3 0"/></svg>
+            Lasso
+          </button>
+          <button id="map-reset" class="ghost-btn map-tool" title="Reset zoom">Reset view</button>
+        </div>
+        <div class="map-tb-hint" id="map-hint">Scroll to zoom · drag to pan · hover for detail · click to open</div>
+      </div>
+      <div class="map-stage">
+        <canvas id="map-canvas"></canvas>
+        <div id="map-tooltip" class="map-tooltip" hidden></div>
+        <div id="map-legend" class="map-legend"></div>
+        <div id="map-loading" class="map-loading" hidden>Loading vector map…</div>
+      </div>
+      <div id="map-selbar" class="map-selbar" hidden>
+        <span id="map-selcount">0 selected</span>
+        <button class="primary-btn sm" id="map-sel-save">Add to My Events</button>
+        <button class="ghost-btn sm" id="map-sel-filter">Filter to selection</button>
+        <button class="text-btn" id="map-sel-clear">Clear</button>
+      </div>
+    </div>
+
     <div id="empty-state" class="empty-state" hidden>
       <div class="empty-emoji">🔍</div>
       <h3>No talks match</h3>
@@ -159,6 +196,11 @@
       <div class="settings-row">
         <label class="toggle-line"><input type="checkbox" id="use-llm-toggle" /> <span>Use Claude to interpret my searches</span></label>
       </div>
+      <hr class="settings-sep" />
+      <p class="muted"><strong>Semantic search</strong> understands meaning, so a query like <em>“event sourcing”</em> or <em>“keeping humans in the loop”</em> finds relevant talks even with no exact word match. It runs entirely in your browser; the model (~25&nbsp;MB) downloads once on first use and is cached.</p>
+      <div class="settings-row">
+        <label class="toggle-line"><input type="checkbox" id="use-semantic-toggle" /> <span>Enable in-browser semantic search</span></label>
+      </div>
       <div class="settings-actions">
         <button class="primary-btn" id="save-settings">Save</button>
         <span id="settings-status" class="muted"></span>
@@ -171,6 +213,7 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="data.js"></script>
+<script src="data/enriched.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
