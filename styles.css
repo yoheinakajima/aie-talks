@@ -403,17 +403,6 @@ button { font-family: inherit; cursor: pointer; }
 
 mark { background: color-mix(in srgb, var(--accent-soft) 80%, #fde68a); color: inherit; border-radius: 3px; padding: 0 1px; }
 
-/* ---------- GRID view ---------- */
-.results.view-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
-.results.view-grid .card { grid-template-columns: 1fr; gap: 0; }
-.results.view-grid .card-time { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
-.results.view-grid .card-time .ct-day { order: 0; }
-.results.view-grid .card-time .ct-start, .results.view-grid .card-time .ct-end { font-size: 12.5px; margin: 0; font-weight: 500; color: var(--muted); }
-.results.view-grid .card-time .ct-dur { margin: 0; }
-.results.view-grid .fav-btn { position: absolute; top: 12px; right: 12px; }
-.results.view-grid .card-main { padding-right: 30px; }
-.results.view-grid .card-abstract { -webkit-line-clamp: 3; }
-
 /* ---------- COMPACT view ---------- */
 .results.view-compact { gap: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
 .results.view-compact .card {
