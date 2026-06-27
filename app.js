@@ -9,9 +9,10 @@ const DATA = window.AIEWF || { talks: [], facets: {}, conference: {} };
 const TALKS = DATA.talks;
 const FACETS = DATA.facets;
 const CONF = DATA.conference;
+const ENRICH = window.AIEWF_ENRICH || {};   // { id: {keyphrases[], entities[], summary} }
 const LS = {
   favs: "aiewf:favs", theme: "aiewf:theme", view: "aiewf:view",
-  apikey: "aiewf:apikey", useLLM: "aiewf:useLLM",
+  apikey: "aiewf:apikey", useLLM: "aiewf:useLLM", semantic: "aiewf:semantic",
 };
 
 /* ---------- persistence helpers ---------- */
@@ -24,11 +25,13 @@ const store = {
 const favs = new Set(store.get(LS.favs, []));
 const state = {
   search: "",
+  semQuery: "",            // raw natural-language query for semantic ranking
   days: new Set(), types: new Set(), topics: new Set(),
-  locations: new Set(), tags: new Set(),
+  locations: new Set(), tags: new Set(), orgs: new Set(),
   times: new Set(), durations: new Set(),
   speaker: "",
   favOnly: false, hasAbstract: false, hideTentative: false,
+  pinned: null,            // Set of ids when "filter to map selection" is active
   sort: "time",
   view: store.get(LS.view, "agenda"),
   interpretation: null,
@@ -38,7 +41,7 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const els = {
   askInput: $("ask-input"), askGo: $("ask-go"), askClear: $("ask-clear"),
-  askSuggest: $("ask-suggest"),
+  askSuggest: $("ask-suggest"), askSem: $("ask-sem"),
   sort: $("sort-select"), viewSwitch: $("view-switch"),
   results: $("results"), empty: $("empty-state"), resultCount: $("result-count"),
   filterPanels: $("filter-panels"), chipBar: $("chip-bar"),
@@ -50,7 +53,8 @@ const els = {
   myEventsDrawer: $("myevents-drawer"), myEventsScrim: $("myevents-scrim"),
   myEventsBody: $("myevents-body"), myEventsSub: $("myevents-sub"),
   settingsScrim: $("settings-scrim"), apikeyInput: $("apikey-input"),
-  useLLMToggle: $("use-llm-toggle"), settingsStatus: $("settings-status"),
+  useLLMToggle: $("use-llm-toggle"), useSemanticToggle: $("use-semantic-toggle"),
+  settingsStatus: $("settings-status"),
   toast: $("toast"),
 };
 
@@ -109,13 +113,20 @@ const STOP = new Set("the a an and or of to for in on at with about from into ov
 function tokenize(s) {
   return (s || "").toLowerCase().replace(/[^a-z0-9+#\s-]/g, " ").split(/\s+/).filter(w => w && w.length > 1 && !STOP.has(w));
 }
-// pre-build a lightweight search blob per talk
+// pre-build a lightweight search blob per talk (now enriched with LLM keyphrases)
 TALKS.forEach(t => {
+  const en = ENRICH[t.id] || {};
+  t._kp = en.keyphrases || [];
+  t._ent = en.entities || [];
+  t._summary = en.summary || "";
+  t._kp_l = t._kp.join(" ").toLowerCase();
+  t._ent_l = t._ent.join(" ").toLowerCase();
   t._blob = [
     t.title, t.title, // weight title
     t.spk.join(" "),
     (t.speakers || []).map(s => s.o).join(" "),
     t.topic || "", (t.tags || []).map(x => x.replace(/-/g, " ")).join(" "),
+    t._kp.join(" "), t._ent.join(" "), t._summary,
     t.abstract,
   ].join(" \n ").toLowerCase();
   t._title_l = (t.title || "").toLowerCase();
@@ -124,15 +135,144 @@ function scoreTalk(talk, terms) {
   if (!terms.length) return 0;
   let score = 0;
   for (const term of terms) {
-    const inTitle = talk._title_l.includes(term);
-    if (inTitle) score += 8;
+    if (talk._title_l.includes(term)) score += 8;
+    if (talk._kp_l.includes(term)) score += 6;          // specific LLM keyphrases
+    if (talk._ent_l.includes(term)) score += 6;          // named products/orgs/models
     if ((talk.tags || []).some(tg => tg.includes(term))) score += 5;
     if ((talk.topic || "").toLowerCase().includes(term)) score += 4;
     if (talk.spk.join(" ").toLowerCase().includes(term)) score += 5;
+    if (talk._summary && talk._summary.toLowerCase().includes(term)) score += 3;
     if (talk.abstract && talk.abstract.toLowerCase().includes(term)) score += 1.5;
   }
-  // phrase bonus
   return score;
+}
+
+/* ============================================================
+   SEMANTIC SEARCH  (in-browser embeddings, fully optional)
+   Corpus vectors come from data/vectors.js (lazy). Query vectors
+   are computed by Transformers.js using the SAME model the corpus
+   was built with (Xenova/all-MiniLM-L6-v2), so they share one space.
+   ============================================================ */
+const SEM = {
+  enabled: store.get(LS.semantic, true) !== false, // default on
+  status: "idle",        // idle | loading | ready | error | off
+  query: null,           // text the current scores were computed for
+  byId: null,            // Map<id, cosine> for the current query
+  vec: null,             // window.AIEWF_VEC artifact
+  rows: null,            // Float32Array matrix (count x dim), L2-normalized
+  _vecP: null, _modelP: null,
+};
+const SEM_INCLUDE = 0.32;   // min cosine to surface a semantic-only (no keyword) match
+const SEM_MAX_ONLY = 60;    // cap on semantic-only additions per query
+const RRF_K = 60;
+
+// lazy-load the vector artifact (data/vectors.js)
+function ensureVec() {
+  if (window.AIEWF_VEC) return Promise.resolve(window.AIEWF_VEC);
+  if (SEM._vecP) return SEM._vecP;
+  SEM._vecP = new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "data/vectors.js";
+    s.onload = () => res(window.AIEWF_VEC);
+    s.onerror = () => rej(new Error("vectors.js failed to load"));
+    document.head.appendChild(s);
+  });
+  return SEM._vecP;
+}
+// decode int8 base64 -> normalized Float32 rows (once)
+function decodeVec() {
+  if (SEM.rows) return;
+  const v = window.AIEWF_VEC; SEM.vec = v;
+  const dim = v.dim, n = v.count, scale = v.scale;
+  const bin = atob(v.vectorsB64);
+  const rows = new Float32Array(n * dim);
+  for (let i = 0; i < n; i++) {
+    let nrm = 0;
+    for (let d = 0; d < dim; d++) {
+      let b = bin.charCodeAt(i * dim + d);
+      if (b > 127) b -= 256;             // signed byte
+      const f = b / scale; rows[i * dim + d] = f; nrm += f * f;
+    }
+    nrm = Math.sqrt(nrm) || 1;            // renormalize after quantization
+    for (let d = 0; d < dim; d++) rows[i * dim + d] /= nrm;
+  }
+  SEM.rows = rows;
+  SEM.idIndex = new Map(v.ids.map((id, i) => [id, i]));
+}
+// load the embedding model from CDN (Transformers.js), cached by the browser
+function ensureModel() {
+  if (SEM._modelP) return SEM._modelP;
+  SEM._modelP = (async () => {
+    const mod = await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2");
+    mod.env.allowLocalModels = false;
+    mod.env.useBrowserCache = true;
+    return await mod.pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2", { quantized: true });
+  })();
+  return SEM._modelP;
+}
+async function embedQuery(text) {
+  const extractor = await ensureModel();
+  const out = await extractor(text, { pooling: "mean", normalize: true });
+  return Float32Array.from(out.data);
+}
+function cosineAll(qv) {
+  const { rows, vec } = SEM; const dim = vec.dim, n = vec.count;
+  const sims = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0; const o = i * dim;
+    for (let d = 0; d < dim; d++) s += qv[d] * rows[o + d];
+    sims[i] = s;
+  }
+  return sims;
+}
+// compute (or clear) semantic scores for a query, then re-render
+async function runSemantic(text) {
+  text = (text || "").trim();
+  SEM.query = text;
+  if (!text || !SEM.enabled) {
+    SEM.byId = null; SEM.status = SEM.enabled ? "idle" : "off"; updateSemIndicator(); return;
+  }
+  SEM.status = "loading"; updateSemIndicator();
+  try {
+    await ensureVec(); decodeVec();
+    const qv = await embedQuery(text);
+    if (SEM.query !== text) return;          // superseded by a newer query
+    const sims = cosineAll(qv);
+    const m = new Map();
+    SEM.vec.ids.forEach((id, i) => m.set(id, sims[i]));
+    SEM.byId = m; SEM.status = "ready"; updateSemIndicator();
+    render();                                 // upgrade results with semantic signal
+  } catch (e) {
+    SEM.status = "error"; SEM.byId = null; updateSemIndicator();
+  }
+}
+function semScoresCurrent() {
+  return SEM.enabled && SEM.byId && SEM.query && SEM.query === (state.semQuery || "").trim() ? SEM.byId : null;
+}
+function neighborsFor(id) {                    // for "Related talks"; needs vectors loaded
+  const v = window.AIEWF_VEC; if (!v) return null;
+  const i = v.ids.indexOf(id); if (i < 0) return null;
+  return (v.neighbors[i] || []);
+}
+function clusterLabelFor(id) {
+  const v = window.AIEWF_VEC; if (!v) return null;
+  const i = v.ids.indexOf(id); if (i < 0) return null;
+  return v.clusterLabels[v.cluster[i]] || null;
+}
+function updateSemIndicator() {
+  const el = els.askSem; if (!el) return;
+  if (!SEM.enabled || !(state.semQuery || "").trim()) { el.hidden = true; return; }
+  el.hidden = false;
+  const map = {
+    loading: ["sem-loading", "◐", "Loading semantic model…"],
+    ready: ["sem-ready", "✦", "Semantic search on"],
+    error: ["sem-error", "!", "Semantic offline — using keywords"],
+    idle: ["sem-idle", "✦", "Semantic ready"],
+  };
+  const [cls, glyph, title] = map[SEM.status] || map.idle;
+  el.className = "ask-sem " + cls;
+  el.textContent = glyph;
+  el.title = title;
 }
 
 /* ============================================================
@@ -214,8 +354,10 @@ function localParse(qRaw) {
   // favorites
   if (/my favorite|favourited|favorited|my events|saved|my schedule/.test(q)) spec.favOnly = true;
 
-  // topic exact-ish match
-  TOPIC_KEYS.forEach(tk => { if (q.includes(tk.toLowerCase())) spec.topics.push(tk); });
+  // topic exact-ish match — only for specific multi-word track names, so a
+  // broad single word ("security", "evals", "inference") doesn't hard-narrow
+  // to a tiny track; tags + semantic ranking handle those instead.
+  TOPIC_KEYS.forEach(tk => { if (tk.includes(" ") && q.includes(tk.toLowerCase())) spec.topics.push(tk); });
 
   // synonyms -> tags
   const addTag = (t) => { if (TAG_KEYS.includes(t) && !spec.tags.includes(t)) spec.tags.push(t); };
@@ -321,6 +463,8 @@ function normalizeLLMSpec(s, qRaw) {
 function applySpec(spec, source) {
   // reset filter sets that the spec controls; keep nothing stale
   state.search = spec.search || "";
+  // semantic ranking uses the full raw request when available
+  state.semQuery = (spec._raw != null ? spec._raw : (spec.search || "")).trim();
   state.days = new Set(spec.days || []);
   state.types = new Set(spec.types || []);
   state.tags = new Set(spec.tags || []);
@@ -336,6 +480,7 @@ function applySpec(spec, source) {
   els.sort.value = state.sort;
   syncFilterUI();
   render();
+  runSemantic(state.semQuery);   // async; re-renders when ready
 }
 
 /* ============================================================
@@ -343,34 +488,67 @@ function applySpec(spec, source) {
    ============================================================ */
 function activeFilterTotal() {
   return state.days.size + state.types.size + state.topics.size + state.locations.size +
-    state.tags.size + state.times.size + state.durations.size +
+    state.tags.size + state.orgs.size + state.times.size + state.durations.size +
     (state.speaker ? 1 : 0) + (state.favOnly ? 1 : 0) +
     (state.hasAbstract ? 1 : 0) + (state.hideTentative ? 1 : 0);
 }
+// returns talks passing all hard (non-text) filters
+function hardFilter(t) {
+  if (state.pinned && !state.pinned.has(t.id)) return false;
+  if (state.days.size && !state.days.has(t.dayLabel)) return false;
+  if (state.types.size && !state.types.has(t.type)) return false;
+  if (state.topics.size && !state.topics.has(t.topic)) return false;
+  if (state.locations.size && !state.locations.has(t.loc)) return false;
+  if (state.orgs.size && !(t.speakers || []).some(s => s.o && state.orgs.has(s.o))) return false;
+  if (state.tags.size && !(t.tags || []).some(tg => state.tags.has(tg))) return false;
+  if (state.times.size && !state.times.has(timeBucket(t.start))) return false;
+  if (state.durations.size && !state.durations.has(durBucket(t.dur))) return false;
+  if (state.favOnly && !favs.has(t.id)) return false;
+  if (state.hasAbstract && !t.abstract) return false;
+  if (state.hideTentative && t.tent) return false;
+  const spkQ = state.speaker.toLowerCase().trim();
+  if (spkQ) {
+    const hay = (t.spk.join(" ") + " " + (t.speakers || []).map(s => s.o).join(" ")).toLowerCase();
+    if (!hay.includes(spkQ)) return false;
+  }
+  return true;
+}
 function filterTalks() {
   const terms = tokenize(state.search);
-  const spkQ = state.speaker.toLowerCase().trim();
-  const out = [];
+  const sem = semScoresCurrent();
+  const hasQuery = !!((state.semQuery || "").trim()) && (terms.length > 0 || !!sem);
+  const cands = [];
   for (const t of TALKS) {
-    if (state.days.size && !state.days.has(t.dayLabel)) continue;
-    if (state.types.size && !state.types.has(t.type)) continue;
-    if (state.topics.size && !state.topics.has(t.topic)) continue;
-    if (state.locations.size && !state.locations.has(t.loc)) continue;
-    if (state.tags.size) { if (!(t.tags || []).some(tg => state.tags.has(tg))) continue; }
-    if (state.times.size && !state.times.has(timeBucket(t.start))) continue;
-    if (state.durations.size && !state.durations.has(durBucket(t.dur))) continue;
-    if (state.favOnly && !favs.has(t.id)) continue;
-    if (state.hasAbstract && !t.abstract) continue;
-    if (state.hideTentative && t.tent) continue;
-    if (spkQ) {
-      const hay = (t.spk.join(" ") + " " + (t.speakers || []).map(s => s.o).join(" ")).toLowerCase();
-      if (!hay.includes(spkQ)) continue;
-    }
-    let score = 0;
-    if (terms.length) { score = scoreTalk(t, terms); if (score <= 0) continue; }
-    out.push({ t, score });
+    if (!hardFilter(t)) continue;
+    const lex = terms.length ? scoreTalk(t, terms) : 0;
+    const ss = sem ? (sem.get(t.id) ?? 0) : null;
+    cands.push({ t, lex, ss, score: 0, _sem: ss, _semOnly: false });
   }
-  sortResults(out, terms.length > 0);
+  if (!hasQuery) { sortResults(cands, false); return cands; }
+
+  // Reciprocal Rank Fusion of the lexical and semantic orderings
+  const lexRanked = cands.filter(c => c.lex > 0).sort((a, b) => b.lex - a.lex);
+  const lexRank = new Map(lexRanked.map((c, i) => [c, i]));
+  let semRank = null, semOnly = null;
+  if (sem) {
+    const semRanked = [...cands].sort((a, b) => b.ss - a.ss);
+    semRank = new Map(semRanked.map((c, i) => [c, i]));
+    semOnly = new Set(cands.filter(c => c.ss >= SEM_INCLUDE)
+      .sort((a, b) => b.ss - a.ss).slice(0, SEM_MAX_ONLY));
+  }
+  const out = [];
+  for (const c of cands) {
+    const incLex = c.lex > 0;
+    const incSem = sem && semOnly.has(c);
+    if (!incLex && !incSem) continue;
+    let rrf = 0;
+    if (incLex) rrf += 1 / (RRF_K + lexRank.get(c));
+    if (sem) rrf += 1 / (RRF_K + semRank.get(c));
+    c.score = rrf * 1000;
+    c._semOnly = !incLex && incSem;
+    out.push(c);
+  }
+  sortResults(out, true);
   return out;
 }
 function sortResults(arr, hasSearch) {
@@ -391,8 +569,10 @@ function sortResults(arr, hasSearch) {
 /* ============================================================
    RENDER
    ============================================================ */
+let LAST_SEMONLY = new Set();
 function render() {
   const results = filterTalks();
+  LAST_SEMONLY = new Set(results.filter(r => r._semOnly).map(r => r.t.id));
   renderResultCount(results.length);
   renderChips();
   renderInterpretation();
@@ -400,6 +580,16 @@ function render() {
   updateFilterCheckStates();
 
   const terms = tokenize(state.search);
+  const mapEl = $("map-wrap");
+
+  if (state.view === "map") {
+    els.results.innerHTML = ""; els.results.className = "results";
+    els.empty.hidden = true; mapEl.hidden = false;
+    renderMap(results);
+    return;
+  }
+  if (mapEl) mapEl.hidden = true;
+
   if (results.length === 0) {
     els.results.innerHTML = "";
     els.empty.hidden = false;
@@ -467,9 +657,13 @@ function cardHTML(t, terms) {
     ? t.speakers.map(s => `<span class="sp-name">${escapeHtml(s.n)}</span>${s.o ? ` · ${escapeHtml(s.o)}` : ""}`).join(`<span style="opacity:.4"> | </span>`)
     : (t.spk.length ? t.spk.map(escapeHtml).join(", ") : "");
   const badges = `<span class="badge t-${t.type}">${typeLabel(t.type)}</span>` +
+    (LAST_SEMONLY.has(t.id) ? `<span class="badge sem" title="related by meaning">✦ related</span>` : "") +
     (t.topic ? `<span class="topic-pill">${escapeHtml(t.topic)}</span>` : "") +
     (t.tent ? `<span class="badge tentative">tentative</span>` : "");
   const room = t.loc ? `<span class="room-pill">${escapeHtml(t.loc)}</span>` : "";
+  const preview = t.abstract
+    ? `<p class="card-abstract">${highlight(t.abstract.slice(0, 320), terms)}</p>`
+    : (t._summary ? `<p class="card-abstract card-summary">${highlight(t._summary, terms)}</p>` : "");
   return `<article class="card${isFav ? " is-fav" : ""}" data-id="${t.id}">
     <div class="card-time">
       <div class="ct-day">${escapeHtml(shortDay(t.dayLabel))}</div>
@@ -482,7 +676,7 @@ function cardHTML(t, terms) {
       <div class="card-badges">${badges} ${room}</div>
       <h3 class="card-title">${highlight(t.title, terms)}</h3>
       ${speakers ? `<div class="card-speakers">${terms.length ? highlight(stripTags(speakers), terms) : speakers}</div>` : ""}
-      ${t.abstract ? `<p class="card-abstract">${highlight(t.abstract.slice(0, 320), terms)}</p>` : ""}
+      ${preview}
       ${topTags.length ? `<div class="card-tags">${topTags.map(tg => `<span class="tagchip${state.tags.has(tg) ? " hot" : ""}">${escapeHtml(tagLabel(tg))}</span>`).join("")}</div>` : ""}
     </div>
     <button class="fav-btn${isFav ? " on" : ""}" data-fav="${t.id}" title="${isFav ? "Remove from My Events" : "Add to My Events"}" aria-label="Favorite">
@@ -505,7 +699,8 @@ function bindCards() {
 }
 
 function renderResultCount(n) {
-  els.resultCount.innerHTML = `<b>${n}</b> of ${TALKS.length} talks`;
+  const extra = LAST_SEMONLY.size ? ` · <span class="rc-sem" title="surfaced by semantic similarity, not keyword match">+${LAST_SEMONLY.size} by meaning</span>` : "";
+  els.resultCount.innerHTML = `<b>${n}</b> of ${TALKS.length} talks${extra}`;
 }
 
 /* ---------- chips ---------- */
@@ -517,10 +712,12 @@ function renderChips() {
   state.topics.forEach(t => add("track", t, () => state.topics.delete(t)));
   state.locations.forEach(l => add("room", l, () => state.locations.delete(l)));
   state.tags.forEach(t => add("tag", tagLabel(t), () => state.tags.delete(t)));
+  state.orgs.forEach(o => add("org", o, () => state.orgs.delete(o)));
   state.times.forEach(t => add("time", t, () => state.times.delete(t)));
   state.durations.forEach(d => add("length", DUR_BUCKETS.find(x => x.key === d)?.label || d, () => state.durations.delete(d)));
   if (state.speaker) add("speaker", state.speaker, () => state.speaker = "");
   if (state.search) add("search", "“" + state.search + "”", () => state.search = "");
+  if (state.pinned) add("map", `selection · ${state.pinned.size}`, () => state.pinned = null);
   if (state.favOnly) add("", "Favorites only", () => state.favOnly = false);
   if (state.hasAbstract) add("", "Has abstract", () => state.hasAbstract = false);
   if (state.hideTentative) add("", "Hide tentative", () => state.hideTentative = false);
@@ -566,6 +763,10 @@ function buildFilters() {
   const topics = (FACETS.topics || []).map(t => ({ key: t.key, label: t.key, count: t.count }));
   const locations = (FACETS.locations || []).map(t => ({ key: t.key, label: t.key, count: t.count }));
   const tags = (FACETS.tags || []).map(t => ({ key: t.key, label: t.label, count: t.count }));
+  const orgCounts = {};
+  TALKS.forEach(t => (t.speakers || []).forEach(s => { if (s.o) orgCounts[s.o] = (orgCounts[s.o] || 0) + 1; }));
+  const orgs = Object.entries(orgCounts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([k, c]) => ({ key: k, label: k, count: c }));
 
   const panels = [
     panel("Day", "days", optsHTML("days", days)),
@@ -576,7 +777,9 @@ function buildFilters() {
     panel("Room / stage", "locations", `<div class="opt-scroll">${optsHTML("locations", locations)}</div>`, true),
     panel("Tags", "tags",
       `<input class="tag-search" id="tag-search" placeholder="Filter tags…" /><div class="opt-scroll" id="tag-opts">${optsHTML("tags", tags)}</div>`),
-    panel("Speaker / org", "speaker", `<input class="tag-search" id="speaker-search" placeholder="e.g. OpenAI, Simon…" value="${escapeHtml(state.speaker)}" />`),
+    panel("Organization", "orgs",
+      `<input class="tag-search" id="org-search" placeholder="Filter organizations…" /><div class="opt-scroll" id="org-opts">${optsHTML("orgs", orgs)}</div>`, true),
+    panel("Speaker / org search", "speaker", `<input class="tag-search" id="speaker-search" placeholder="e.g. OpenAI, Simon…" value="${escapeHtml(state.speaker)}" />`),
     panel("Quick toggles", "toggles", togglesHTML(), false),
   ];
   els.filterPanels.innerHTML = panels.join("");
@@ -616,13 +819,17 @@ function wireFilterEvents() {
     }));
   els.filterPanels.querySelectorAll("input[data-toggle]").forEach(inp =>
     inp.addEventListener("change", () => { state[inp.dataset.toggle] = inp.checked; afterFilterChange(); }));
-  const tagSearch = $("tag-search");
-  if (tagSearch) tagSearch.addEventListener("input", () => {
-    const q = tagSearch.value.toLowerCase();
-    $("tag-opts").querySelectorAll(".opt").forEach(o => {
-      o.style.display = o.querySelector(".lbl").textContent.toLowerCase().includes(q) ? "" : "none";
+  const filterOptList = (input, container) => {
+    if (!input) return;
+    input.addEventListener("input", () => {
+      const q = input.value.toLowerCase();
+      $(container).querySelectorAll(".opt").forEach(o => {
+        o.style.display = o.querySelector(".lbl").textContent.toLowerCase().includes(q) ? "" : "none";
+      });
     });
-  });
+  };
+  filterOptList($("tag-search"), "tag-opts");
+  filterOptList($("org-search"), "org-opts");
   const spk = $("speaker-search");
   if (spk) spk.addEventListener("input", debounce(() => { state.speaker = spk.value.trim(); afterFilterChange(false); }, 250));
   updateFilterCheckStates();
@@ -795,10 +1002,12 @@ function openDetail(id) {
       <div class="dd-badges">
         <span class="badge t-${t.type}">${typeLabel(t.type)}</span>
         ${t.tent ? `<span class="badge tentative">tentative</span>` : ""}
+        <span class="badge cluster" id="dd-cluster" hidden></span>
       </div>
       <button class="dd-close" data-close-detail aria-label="Close">×</button>
     </div>
     <h2 class="dd-title">${escapeHtml(t.title)}</h2>
+    ${t._summary ? `<p class="dd-summary">${escapeHtml(t._summary)}</p>` : ""}
     <div class="dd-meta">
       ${metaRow(`<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/>`, t.dayLabel, fmtDate(t.date))}
       ${metaRow(`<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>`, `${t.start || ""}${t.end ? " – " + t.end : ""}`, t.dur ? fmtDur(t.dur) + " long" : "")}
@@ -811,7 +1020,10 @@ function openDetail(id) {
         <div><div class="dd-sp-name">${escapeHtml(s.n)}</div>${(s.r || s.o) ? `<div class="dd-sp-role">${escapeHtml([s.r, s.o].filter(Boolean).join(", "))}</div>` : ""}</div>
       </div>`).join("")}` : ""}
     ${t.abstract ? `<div class="dd-section-title">About this talk</div><p class="dd-abstract">${escapeHtml(t.abstract)}</p>` : `<div class="dd-section-title">About</div><p class="dd-abstract" style="opacity:.6">No abstract provided for this session.</p>`}
+    ${(t._kp && t._kp.length) ? `<div class="dd-section-title">Key topics</div><div class="dd-tags">${t._kp.slice(0, 10).map(kp => `<span class="kpchip" data-kp-search="${escapeHtml(kp)}" title="Search “${escapeHtml(kp)}”">${escapeHtml(kp)}</span>`).join("")}</div>` : ""}
     ${(t.tags && t.tags.length) ? `<div class="dd-section-title">Tags</div><div class="dd-tags">${t.tags.map(tg => `<span class="tagchip" data-tag-jump="${escapeHtml(tg)}" style="cursor:pointer">${escapeHtml(tagLabel(tg))}</span>`).join("")}</div>` : ""}
+    <div class="dd-section-title">Related talks</div>
+    <div class="dd-related" id="dd-related"><div class="dd-related-load">Finding similar talks…</div></div>
     <div class="dd-actions">
       <button class="dd-fav${isFav ? " on" : ""}" data-fav="${t.id}">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/></svg>
@@ -824,7 +1036,38 @@ function openDetail(id) {
   els.detailDrawer.querySelectorAll("[data-tag-jump]").forEach(b => b.addEventListener("click", () => {
     closeDetail(); state.tags.clear(); state.tags.add(b.dataset.tagJump); state.interpretation = null; syncFilterUI(); render(); window.scrollTo({ top: 0, behavior: "smooth" });
   }));
+  els.detailDrawer.querySelectorAll("[data-kp-search]").forEach(b => b.addEventListener("click", () => {
+    closeDetail(); els.askInput.value = b.dataset.kpSearch; els.askClear.hidden = false; runAsk();
+  }));
+  populateRelated(id);
   showDrawer(els.detailDrawer, els.detailScrim);
+}
+// fill the Related-talks strip from precomputed neighbors (lazy-loads vectors.js)
+function populateRelated(id) {
+  const host = els.detailDrawer.querySelector("#dd-related");
+  if (!host) return;
+  ensureVec().then(() => {
+    if (els.detailDrawer.hidden) return;
+    // guard: drawer might have switched to another talk
+    const stillOpen = els.detailDrawer.querySelector(".dd-fav");
+    if (!stillOpen || stillOpen.dataset.fav !== id) return;
+    const cl = clusterLabelFor(id);
+    const clEl = els.detailDrawer.querySelector("#dd-cluster");
+    if (cl && clEl) { clEl.hidden = false; clEl.textContent = cl; }
+    const nb = neighborsFor(id);
+    if (!nb || !nb.length) { host.innerHTML = `<div class="dd-related-load">No similar talks found.</div>`; return; }
+    host.innerHTML = nb.slice(0, 6).map(n => {
+      const rt = TALKS.find(x => x.id === n.id); if (!rt) return "";
+      const sim = Math.round(n.s * 100);
+      const who = rt.spk && rt.spk.length ? escapeHtml(rt.spk[0]) + (rt.spk.length > 1 ? " +" + (rt.spk.length - 1) : "") : "";
+      return `<button class="dd-rel" data-rel="${rt.id}">
+        <span class="dd-rel-sim" title="${sim}% similar">${sim}%</span>
+        <span class="dd-rel-info"><span class="dd-rel-title">${escapeHtml(rt.title)}</span>
+        <span class="dd-rel-sub">${escapeHtml(shortDay(rt.dayLabel))}${rt.start ? " · " + escapeHtml(rt.start) : ""}${who ? " · " + who : ""}</span></span>
+      </button>`;
+    }).join("");
+    host.querySelectorAll("[data-rel]").forEach(b => b.addEventListener("click", () => openDetail(b.dataset.rel)));
+  }).catch(() => { host.innerHTML = `<div class="dd-related-load">Similar talks unavailable offline.</div>`; });
 }
 function metaRow(svg, val, k) {
   return `<div class="dd-meta-row"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svg}</svg>
@@ -866,6 +1109,7 @@ function setTheme(t) {
 function openSettings() {
   els.apikeyInput.value = store.get(LS.apikey, "");
   els.useLLMToggle.checked = !!store.get(LS.useLLM, false);
+  if (els.useSemanticToggle) els.useSemanticToggle.checked = SEM.enabled;
   els.settingsStatus.textContent = "";
   els.settingsScrim.hidden = false;
 }
@@ -874,7 +1118,13 @@ function saveSettings() {
   const key = els.apikeyInput.value.trim();
   store.set(LS.apikey, key);
   store.set(LS.useLLM, els.useLLMToggle.checked && !!key);
-  els.settingsStatus.textContent = key ? "Saved ✓ Claude enabled" : "Saved ✓ using on-device parser";
+  const semOn = els.useSemanticToggle ? els.useSemanticToggle.checked : SEM.enabled;
+  if (semOn !== SEM.enabled) {
+    SEM.enabled = semOn; store.set(LS.semantic, semOn);
+    if (semOn) runSemantic(state.semQuery);
+    else { SEM.byId = null; SEM.status = "off"; updateSemIndicator(); render(); }
+  }
+  els.settingsStatus.textContent = "Saved ✓" + (key ? " · Claude enabled" : "") + (semOn ? " · semantic on" : "");
   setTimeout(closeSettings, 900);
 }
 
@@ -895,6 +1145,7 @@ async function runAsk() {
       spec = localParse(q);
       spec._source = "local";
     }
+    spec._raw = q;            // full text drives semantic ranking
     applySpec(spec, spec._source);
     window.scrollTo({ top: 0, behavior: "smooth" });
   } finally {
@@ -902,13 +1153,14 @@ async function runAsk() {
   }
 }
 const SUGGESTIONS = [
+  "event sourcing",
+  "keeping humans in the loop",
+  "making models run cheaper and faster",
   "voice agents on day 2 in the afternoon",
-  "keynotes about agents",
   "evals and observability workshops",
   "RAG and retrieval talks",
   "short lightning talks on security",
-  "everything about robotics & world models",
-  "AI in healthcare on the main stage",
+  "stop my agent from hallucinating",
 ];
 function renderSuggestions() {
   els.askSuggest.innerHTML = SUGGESTIONS.map(s => `<button class="suggest-chip" data-suggest="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join("");
@@ -921,12 +1173,14 @@ function renderSuggestions() {
    RESET
    ============================================================ */
 function resetAll() {
-  state.search = ""; state.speaker = "";
-  ["days", "types", "topics", "locations", "tags", "times", "durations"].forEach(k => state[k].clear());
+  state.search = ""; state.speaker = ""; state.semQuery = "";
+  ["days", "types", "topics", "locations", "tags", "orgs", "times", "durations"].forEach(k => state[k].clear());
   state.favOnly = state.hasAbstract = state.hideTentative = false;
+  state.pinned = null;
   state.interpretation = null;
   els.askInput.value = ""; els.askClear.hidden = true;
   state.sort = "time"; els.sort.value = "time";
+  runSemantic("");
   syncFilterUI(); render();
 }
 
@@ -976,6 +1230,261 @@ function toast(msg) {
 }
 
 /* ============================================================
+   VECTOR MAP  (canvas scatter of UMAP coords + clusters)
+   ============================================================ */
+const TYPE_COLORS = { KEYNOTE: "#e0457b", SESSION: "#5b8def", WORKSHOP: "#37b679", SPONSOR: "#f5a623", SPECIAL_EVENT: "#9b59b6" };
+const DAY_COLORS = { "Workshop Day": "#f5a623", "Session Day 1": "#5b8def", "Session Day 2": "#37b679", "Session Day 3": "#e0457b" };
+const MAP = {
+  ready: false, wired: false, canvas: null, ctx: null,
+  w: 0, h: 0, dpr: 1,
+  pts: [], clusterColors: [], centroids: [],
+  tf: { x: 0, y: 0, scale: 1 },
+  colorMode: "cluster", muted: new Set(),
+  lasso: false, lassoPath: [], dragging: false, panning: false, last: null, moved: false,
+  selected: new Set(), hover: null, matched: null,
+};
+function clusterPalette(k) {
+  return Array.from({ length: k }, (_, i) => `hsl(${Math.round((360 * i / k + i * 47) % 360)}, 62%, 55%)`);
+}
+function renderMap(results) {
+  MAP.matched = new Set(results.map(r => r.t.id));
+  const loading = $("map-loading");
+  if (!window.AIEWF_VEC) {
+    if (loading) loading.hidden = false;
+    ensureVec().then(() => { buildMap(); if (loading) loading.hidden = true; drawMap(); })
+      .catch(() => { if (loading) loading.textContent = "Vector map unavailable offline."; });
+    return;
+  }
+  if (loading) loading.hidden = true;
+  buildMap();
+  drawMap();
+}
+function buildMap() {
+  if (MAP.ready) { sizeCanvas(); return; }
+  const v = window.AIEWF_VEC;
+  MAP.clusterColors = clusterPalette(v.clusterK);
+  MAP.pts = v.ids.map((id, i) => {
+    const t = TALKS.find(x => x.id === id);
+    return { id, i, t, wx: v.coords[i][0], wy: v.coords[i][1], cluster: v.cluster[i] };
+  }).filter(p => p.t);
+  // cluster centroids (world coords) for labels
+  const acc = {};
+  MAP.pts.forEach(p => { (acc[p.cluster] = acc[p.cluster] || { x: 0, y: 0, n: 0 }); acc[p.cluster].x += p.wx; acc[p.cluster].y += p.wy; acc[p.cluster].n++; });
+  MAP.centroids = Object.entries(acc).map(([c, a]) => ({ cluster: +c, x: a.x / a.n, y: a.y / a.n, n: a.n, label: v.clusterLabels[+c] || "" }));
+  MAP.canvas = $("map-canvas"); MAP.ctx = MAP.canvas.getContext("2d");
+  sizeCanvas();
+  if (!MAP.wired) wireMap();
+  buildMapLegend();
+  fitView();
+  MAP.ready = true;
+}
+function sizeCanvas() {
+  const stage = MAP.canvas.parentElement;
+  const r = stage.getBoundingClientRect();
+  MAP.w = Math.max(320, r.width); MAP.h = Math.max(320, r.height);
+  MAP.dpr = window.devicePixelRatio || 1;
+  MAP.canvas.width = MAP.w * MAP.dpr; MAP.canvas.height = MAP.h * MAP.dpr;
+  MAP.canvas.style.width = MAP.w + "px"; MAP.canvas.style.height = MAP.h + "px";
+  MAP.ctx.setTransform(MAP.dpr, 0, 0, MAP.dpr, 0, 0);
+}
+function fitView() { MAP.tf = { x: 0, y: 0, scale: 1 }; }
+function worldToScreen(wx, wy) {
+  const base = Math.min(MAP.w, MAP.h) / 2 * 0.92;
+  return [MAP.w / 2 + wx * base * MAP.tf.scale + MAP.tf.x, MAP.h / 2 - wy * base * MAP.tf.scale + MAP.tf.y];
+}
+function pointCategory(p) {
+  if (MAP.colorMode === "type") return p.t.type;
+  if (MAP.colorMode === "day") return p.t.dayLabel;
+  return p.cluster;
+}
+function pointColor(p) {
+  if (MAP.colorMode === "type") return TYPE_COLORS[p.t.type] || "#888";
+  if (MAP.colorMode === "day") return DAY_COLORS[p.t.dayLabel] || "#888";
+  return MAP.clusterColors[p.cluster] || "#888";
+}
+function isActive(p) {
+  if (MAP.matched && !MAP.matched.has(p.id)) return false;
+  if (MAP.muted.has(String(pointCategory(p)))) return false;
+  return true;
+}
+function drawMap() {
+  if (!MAP.ready) return;
+  const ctx = MAP.ctx; const dark = document.documentElement.getAttribute("data-theme") === "dark";
+  ctx.clearRect(0, 0, MAP.w, MAP.h);
+  const r = Math.max(2.2, 3.2 * Math.sqrt(MAP.tf.scale));
+  // faded (inactive) first
+  for (const p of MAP.pts) {
+    if (isActive(p)) continue;
+    const [sx, sy] = worldToScreen(p.wx, p.wy);
+    if (sx < -20 || sx > MAP.w + 20 || sy < -20 || sy > MAP.h + 20) continue;
+    ctx.beginPath(); ctx.arc(sx, sy, r * 0.8, 0, 6.2832);
+    ctx.fillStyle = dark ? "rgba(120,130,150,.16)" : "rgba(120,130,150,.18)"; ctx.fill();
+  }
+  // active points
+  for (const p of MAP.pts) {
+    if (!isActive(p)) continue;
+    const [sx, sy] = worldToScreen(p.wx, p.wy);
+    if (sx < -20 || sx > MAP.w + 20 || sy < -20 || sy > MAP.h + 20) continue;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, 6.2832);
+    ctx.fillStyle = pointColor(p); ctx.globalAlpha = 0.92; ctx.fill(); ctx.globalAlpha = 1;
+    if (MAP.selected.has(p.id)) { ctx.lineWidth = 2; ctx.strokeStyle = dark ? "#fff" : "#111"; ctx.stroke(); }
+    if (favs.has(p.id)) { ctx.lineWidth = 2; ctx.strokeStyle = "#f5a623"; ctx.stroke(); }
+  }
+  // neighbor links on hover
+  if (MAP.hover) {
+    const nb = neighborsFor(MAP.hover.id) || [];
+    const [hx, hy] = worldToScreen(MAP.hover.wx, MAP.hover.wy);
+    ctx.strokeStyle = dark ? "rgba(180,200,255,.5)" : "rgba(60,90,200,.45)"; ctx.lineWidth = 1.2;
+    nb.slice(0, 6).forEach(n => {
+      const np = MAP.pts.find(p => p.id === n.id); if (!np) return;
+      const [nx, ny] = worldToScreen(np.wx, np.wy);
+      ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(nx, ny); ctx.stroke();
+      ctx.beginPath(); ctx.arc(nx, ny, r + 1.5, 0, 6.2832); ctx.strokeStyle = dark ? "#cdd6ff" : "#3a5ac8"; ctx.lineWidth = 1.8; ctx.stroke();
+      ctx.strokeStyle = dark ? "rgba(180,200,255,.5)" : "rgba(60,90,200,.45)"; ctx.lineWidth = 1.2;
+    });
+    ctx.beginPath(); ctx.arc(hx, hy, r + 3, 0, 6.2832); ctx.fillStyle = pointColor(MAP.hover); ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = dark ? "#fff" : "#111"; ctx.stroke();
+  }
+  // cluster labels (only in cluster mode)
+  if (MAP.colorMode === "cluster") {
+    ctx.font = "600 11px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (const c of MAP.centroids) {
+      if (c.n < 5 || MAP.muted.has(String(c.cluster))) continue;
+      const [sx, sy] = worldToScreen(c.x, c.y);
+      if (sx < 0 || sx > MAP.w || sy < 0 || sy > MAP.h) continue;
+      const txt = c.label.length > 26 ? c.label.slice(0, 24) + "…" : c.label;
+      const wpad = ctx.measureText(txt).width / 2 + 6;
+      ctx.fillStyle = dark ? "rgba(20,24,34,.72)" : "rgba(255,255,255,.78)";
+      ctx.fillRect(sx - wpad, sy - 9, wpad * 2, 18);
+      ctx.fillStyle = dark ? "#e8ecf5" : "#1b2030"; ctx.fillText(txt, sx, sy);
+    }
+  }
+  // lasso path
+  if (MAP.lassoPath.length > 1) {
+    ctx.beginPath(); ctx.moveTo(MAP.lassoPath[0][0], MAP.lassoPath[0][1]);
+    for (const pt of MAP.lassoPath) ctx.lineTo(pt[0], pt[1]);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(91,141,239,.12)"; ctx.fill();
+    ctx.strokeStyle = "#5b8def"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+function nearestPoint(mx, my, maxPx) {
+  let best = null, bestD = (maxPx || 9) ** 2;
+  for (const p of MAP.pts) {
+    if (MAP.matched && !MAP.matched.has(p.id) && MAP.matched.size) { /* still allow hover on faded */ }
+    const [sx, sy] = worldToScreen(p.wx, p.wy);
+    const d = (sx - mx) ** 2 + (sy - my) ** 2;
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+function wireMap() {
+  MAP.wired = true;
+  const cv = MAP.canvas; const tip = $("map-tooltip");
+  const relPos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  cv.addEventListener("mousedown", e => {
+    const [mx, my] = relPos(e); MAP.last = [mx, my]; MAP.moved = false;
+    if (MAP.lasso) { MAP.lassoPath = [[mx, my]]; MAP.dragging = true; }
+    else { MAP.panning = true; }
+  });
+  window.addEventListener("mousemove", e => {
+    if (!MAP.ready || (state.view !== "map")) return;
+    const [mx, my] = relPos(e);
+    if (MAP.panning && MAP.last) {
+      MAP.tf.x += mx - MAP.last[0]; MAP.tf.y += my - MAP.last[1]; MAP.last = [mx, my]; MAP.moved = true; drawMap(); return;
+    }
+    if (MAP.dragging && MAP.lasso) { MAP.lassoPath.push([mx, my]); MAP.moved = true; drawMap(); return; }
+    // hover
+    if (mx < 0 || my < 0 || mx > MAP.w || my > MAP.h) { if (MAP.hover) { MAP.hover = null; tip.hidden = true; drawMap(); } return; }
+    const p = nearestPoint(mx, my, 9);
+    if (p !== MAP.hover) {
+      MAP.hover = p; drawMap();
+      if (p) {
+        const sum = p.t._summary || (p.t.abstract ? p.t.abstract.slice(0, 110) + "…" : "");
+        tip.innerHTML = `<div class="mt-title">${escapeHtml(p.t.title)}</div>
+          <div class="mt-sub">${escapeHtml(shortDay(p.t.dayLabel))}${p.t.start ? " · " + escapeHtml(p.t.start) : ""} · ${escapeHtml(typeLabel(p.t.type))}${p.t.spk && p.t.spk.length ? " · " + escapeHtml(p.t.spk[0]) : ""}</div>
+          ${sum ? `<div class="mt-sum">${escapeHtml(sum)}</div>` : ""}
+          <div class="mt-cl">${escapeHtml(MAP.clusterColors.length ? (window.AIEWF_VEC.clusterLabels[p.cluster] || "") : "")}</div>`;
+        tip.hidden = false;
+        let tx = mx + 14, ty = my + 14;
+        if (tx + 240 > MAP.w) tx = mx - 254; if (ty + 120 > MAP.h) ty = my - 130;
+        tip.style.left = tx + "px"; tip.style.top = ty + "px";
+      } else tip.hidden = true;
+    }
+  });
+  window.addEventListener("mouseup", () => {
+    if (MAP.dragging && MAP.lasso && MAP.lassoPath.length > 2) {
+      MAP.pts.forEach(p => { const [sx, sy] = worldToScreen(p.wx, p.wy); if (pointInPoly(sx, sy, MAP.lassoPath)) MAP.selected.add(p.id); });
+      updateSelbar();
+    }
+    MAP.dragging = false; MAP.panning = false; MAP.lassoPath = []; MAP.last = null; drawMap();
+  });
+  cv.addEventListener("click", () => {
+    if (MAP.moved) return;
+    if (MAP.hover) openDetail(MAP.hover.id);
+  });
+  cv.addEventListener("wheel", e => {
+    e.preventDefault();
+    const [mx, my] = relPos(e);
+    const f = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const ns = Math.min(40, Math.max(0.6, MAP.tf.scale * f));
+    const k = ns / MAP.tf.scale;
+    // keep cursor anchored
+    MAP.tf.x = mx - (mx - MAP.tf.x) * k; MAP.tf.y = my - (my - MAP.tf.y) * k;
+    MAP.tf.scale = ns; drawMap();
+  }, { passive: false });
+}
+function pointInPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+    if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+function buildMapLegend() {
+  const host = $("map-legend"); if (!host) return;
+  let items = [];
+  if (MAP.colorMode === "type") items = Object.keys(TYPE_COLORS).map(k => ({ key: k, label: typeLabel(k), color: TYPE_COLORS[k] }));
+  else if (MAP.colorMode === "day") items = Object.keys(DAY_COLORS).map(k => ({ key: k, label: shortDay(k), color: DAY_COLORS[k] }));
+  else items = MAP.centroids.slice().sort((a, b) => b.n - a.n).map(c => ({ key: String(c.cluster), label: c.label, color: MAP.clusterColors[c.cluster] }));
+  host.innerHTML = items.map(it =>
+    `<button class="leg-item${MAP.muted.has(it.key) ? " muted" : ""}" data-leg="${escapeHtml(it.key)}">
+      <span class="leg-dot" style="background:${it.color}"></span>${escapeHtml(it.label)}</button>`).join("");
+  host.querySelectorAll("[data-leg]").forEach(b => b.addEventListener("click", () => {
+    const k = b.dataset.leg; if (MAP.muted.has(k)) MAP.muted.delete(k); else MAP.muted.add(k);
+    b.classList.toggle("muted"); drawMap();
+  }));
+}
+function updateSelbar() {
+  const bar = $("map-selbar"); if (!bar) return;
+  bar.hidden = MAP.selected.size === 0;
+  $("map-selcount").textContent = `${MAP.selected.size} selected`;
+}
+function wireMapToolbar() {
+  $("map-color").addEventListener("change", e => { MAP.colorMode = e.target.value; MAP.muted.clear(); buildMapLegend(); drawMap(); });
+  $("map-lasso").addEventListener("click", () => {
+    MAP.lasso = !MAP.lasso;
+    $("map-lasso").classList.toggle("active", MAP.lasso);
+    MAP.canvas && (MAP.canvas.style.cursor = MAP.lasso ? "crosshair" : "grab");
+    $("map-hint").textContent = MAP.lasso ? "Drag to lasso-select talks · release to capture" : "Scroll to zoom · drag to pan · hover for detail · click to open";
+  });
+  $("map-reset").addEventListener("click", () => { fitView(); MAP.muted.clear(); buildMapLegend(); drawMap(); });
+  $("map-sel-clear").addEventListener("click", () => { MAP.selected.clear(); updateSelbar(); drawMap(); });
+  $("map-sel-save").addEventListener("click", () => {
+    let n = 0; MAP.selected.forEach(id => { if (!favs.has(id)) { favs.add(id); n++; } });
+    store.set(LS.favs, [...favs]); renderFavCount(); drawMap();
+    toast(`Added ${n} talk${n !== 1 ? "s" : ""} to My Events`);
+  });
+  $("map-sel-filter").addEventListener("click", () => {
+    if (!MAP.selected.size) return;
+    state.pinned = new Set(MAP.selected); setView("list"); render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  window.addEventListener("resize", debounce(() => { if (state.view === "map" && MAP.ready) { sizeCanvas(); drawMap(); } }, 150));
+}
+
+/* ============================================================
    INIT
    ============================================================ */
 function init() {
@@ -1006,8 +1515,13 @@ function init() {
 
   els.sort.addEventListener("change", () => { state.sort = els.sort.value; render(); });
   els.viewSwitch.querySelectorAll("button").forEach(b => b.addEventListener("click", () => { setView(b.dataset.view); render(); }));
+  wireMapToolbar();
+  if (els.askSem) els.askSem.addEventListener("click", openSettings);
 
-  $("btn-theme").addEventListener("click", () => setTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"));
+  $("btn-theme").addEventListener("click", () => {
+    setTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+    if (state.view === "map" && MAP.ready) drawMap();
+  });
   $("btn-myevents").addEventListener("click", openMyEvents);
   $("btn-settings").addEventListener("click", openSettings);
   $("clear-all").addEventListener("click", resetAll);

@@ -1,0 +1,717 @@
+{
+ "coverage": {
+  "total": 563,
+  "withAbstract": 455,
+  "withoutAbstract": 108,
+  "avgAbstractWords": 134,
+  "tentative": 47
+ },
+ "nearDuplicateGroups": [
+  {
+   "size": 4,
+   "ids": [
+    "session_0070",
+    "session_0087",
+    "session_0102",
+    "session_0118"
+   ],
+   "titles": [
+    "Claude Managed Agents Workshop (Part 1)",
+    "Claude Managed Agents workshop (Part 2)",
+    "Claude Managed Agents workshop (Part 3)",
+    "Claude Managed Agents workshop (Part 4)"
+   ]
+  },
+  {
+   "size": 3,
+   "ids": [
+    "session_0134",
+    "session_0150",
+    "session_0166"
+   ],
+   "titles": [
+    "Everybody Gets a Digital Clone! (Part 1 of 3)",
+    "Everybody Gets a Digital Clone! (Part 2 of 3)",
+    "Everybody Gets a Digital Clone! (Part 3 of 3)"
+   ]
+  },
+  {
+   "size": 3,
+   "ids": [
+    "session_0137",
+    "session_0153",
+    "session_0169"
+   ],
+   "titles": [
+    "To be announced",
+    "To be announced",
+    "To be announced"
+   ]
+  },
+  {
+   "size": 3,
+   "ids": [
+    "session_0183",
+    "session_0198",
+    "session_0212"
+   ],
+   "titles": [
+    "Setting Yourself Up for Success — Part 1",
+    "Setting Yourself Up for Success — Part 2",
+    "Setting Yourself Up for Success — Part 3"
+   ]
+  },
+  {
+   "size": 3,
+   "ids": [
+    "session_0235",
+    "session_0253",
+    "session_0269"
+   ],
+   "titles": [
+    "Build realtime multimodal agents with Gemini Live",
+    "Build realtime multimodal agents with Gemini Live (continued 2)",
+    "Build realtime multimodal agents with Gemini Live (continued 3)"
+   ]
+  },
+  {
+   "size": 3,
+   "ids": [
+    "session_0305",
+    "session_0321",
+    "session_0337"
+   ],
+   "titles": [
+    "The Agentic Power User's Playbook: Tips and Tricks for Swarm-Style Agentic Development",
+    "The Agentic Power User's Playbook: Tips and Tricks for Swarm-Style Agentic Development (continued 2)",
+    "The Agentic Power User's Playbook: Tips and Tricks for Swarm-Style Agentic Development (continued 3)"
+   ]
+  },
+  {
+   "size": 3,
+   "ids": [
+    "session_0144",
+    "session_0315",
+    "session_0548"
+   ],
+   "titles": [
+    "Deepmind Expo Session 1",
+    "Deepmind Expo Session 3",
+    "Deepmind Expo Session 2"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0023",
+    "session_0032"
+   ],
+   "titles": [
+    "2 hr deep dive on LLM Inference at Scale — Part 1 of 2",
+    "2 hr deep dive on LLM Inference at Scale — Part 2 of 2"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0024",
+    "session_0033"
+   ],
+   "titles": [
+    "Build the Right Thing: Product Engineering for Software Developers (Part 1)",
+    "Build the Right Thing: Product Engineering for Software Developers — Part 2"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0001",
+    "session_0039"
+   ],
+   "titles": [
+    "From Vibes to Production: Evaluating and Shipping AI Agents That Work 101",
+    "From Vibes to Production: Evaluating and Shipping AI Agents That Work 201"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0233",
+    "session_0251"
+   ],
+   "titles": [
+    "Building the simulation infrastructure for practical world model use",
+    "Building the simulation infrastructure for practical world model use"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0203",
+    "session_0314"
+   ],
+   "titles": [
+    "Surviving Your Own Velocity: How VS Code Ships Weekly with 40 People",
+    "Surviving Your Own Velocity: How VS Code Ships Weekly with 40 People"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0302",
+    "session_0318"
+   ],
+   "titles": [
+    "From fork() to Fleet: Designing an Agent Sandbox Cloud Pt 1",
+    "From fork() to Fleet: Designing an Agent Sandbox Cloud Pt2"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0370",
+    "session_0386"
+   ],
+   "titles": [
+    "Don't Write Skills, Train Models (cont. 2/3)",
+    "Don't Write Skills, Train Models (cont. 3/3)"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0245",
+    "session_0416"
+   ],
+   "titles": [
+    "AI Engineering & Governance 2026 Trends",
+    "AI Engineering & Governance 2026 Trends"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0407",
+    "session_0425"
+   ],
+   "titles": [
+    "Local AI State of the Union: Part 1",
+    "Local AI State of the Union (cont'd)"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0442",
+    "session_0459"
+   ],
+   "titles": [
+    "Local AI in Industry",
+    "Local AI in Industry"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0191",
+    "session_0486"
+   ],
+   "titles": [
+    "Video Discovery for Agentic World-Model Training",
+    "Video Discovery for Agentic World-Model Training"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0508",
+    "session_0524"
+   ],
+   "titles": [
+    "Local AI: Quantization & Compression",
+    "Local AI: Quantization & Compression (Con'td)"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0492",
+    "session_0540"
+   ],
+   "titles": [
+    "Why Agentic Systems Need Ontologies",
+    "Citation Needed: Provenance for LLM-Built Knowledge Graphs"
+   ]
+  },
+  {
+   "size": 2,
+   "ids": [
+    "session_0539",
+    "session_0553"
+   ],
+   "titles": [
+    "Local AI: Model Routing",
+    "Local AI: Model Routing (con'td)"
+   ]
+  }
+ ],
+ "nearDuplicateStats": {
+  "groups": 21,
+  "talksInvolved": 50,
+  "threshold": 0.92
+ },
+ "mostUnique": [
+  {
+   "title": "Daytona Expo 1",
+   "type": "SESSION",
+   "meanSim": 0.035
+  },
+  {
+   "title": "This Year in Claude",
+   "type": "SPECIAL_EVENT",
+   "meanSim": 0.065
+  },
+  {
+   "title": "SOTA Generative Media Panel",
+   "type": "SPECIAL_EVENT",
+   "meanSim": 0.067
+  },
+  {
+   "title": "Neo4J L&L",
+   "type": "SPONSOR",
+   "meanSim": 0.072
+  },
+  {
+   "title": "Rob Wachen — transformer-only ASICs for inference",
+   "type": "SESSION",
+   "meanSim": 0.074
+  },
+  {
+   "title": "Closing Keynote",
+   "type": "KEYNOTE",
+   "meanSim": 0.082
+  },
+  {
+   "title": "Kimchi Expo Session",
+   "type": "SESSION",
+   "meanSim": 0.083
+  },
+  {
+   "title": "Circle Expo Session",
+   "type": "SESSION",
+   "meanSim": 0.087
+  },
+  {
+   "title": "Who Approved That MCP Server? Governing the Tool Layer",
+   "type": "SESSION",
+   "meanSim": 0.092
+  },
+  {
+   "title": "LlamaIndex Expo Session",
+   "type": "SESSION",
+   "meanSim": 0.092
+  },
+  {
+   "title": "Dash0 Add-On Expo Session",
+   "type": "SESSION",
+   "meanSim": 0.097
+  },
+  {
+   "title": "Opening Keynote: Topic TBD",
+   "type": "KEYNOTE",
+   "meanSim": 0.107
+  },
+  {
+   "title": "While my guitar gently speaks",
+   "type": "SESSION",
+   "meanSim": 0.108
+  },
+  {
+   "title": "Baseten Expo Session",
+   "type": "SESSION",
+   "meanSim": 0.109
+  },
+  {
+   "title": "Why Graphs?",
+   "type": "KEYNOTE",
+   "meanSim": 0.112
+  }
+ ],
+ "mostTypical": [
+  {
+   "title": "Rise of the Software Factory",
+   "meanSim": 0.425
+  },
+  {
+   "title": "AI Agents Are Just Distributed Systems Now",
+   "meanSim": 0.41
+  },
+  {
+   "title": "We Solved Agent Building - The Evolution of Building A Successful Data Science Agent",
+   "meanSim": 0.403
+  },
+  {
+   "title": "Agents' next frontier: agent-to-agent and network effects",
+   "meanSim": 0.403
+  },
+  {
+   "title": "From Vibes to Production: Evaluating and Shipping AI Agents That Work 101",
+   "meanSim": 0.4
+  },
+  {
+   "title": "What If Your Chip Design Team Moved Like a Single Body?",
+   "meanSim": 0.4
+  },
+  {
+   "title": "ALPHALAB: Autonomous Multi-Agent Research Across Optimization Domains with Frontier LLMs",
+   "meanSim": 0.399
+  },
+  {
+   "title": "Tribal Dungeons of Global Shipping: AI Agents at Global Scale",
+   "meanSim": 0.399
+  },
+  {
+   "title": "From Vibes to Production: Evaluating and Shipping AI Agents That Work 201",
+   "meanSim": 0.397
+  },
+  {
+   "title": "Agentic SDLC at Uber",
+   "meanSim": 0.396
+  }
+ ],
+ "topOrgs": [
+  {
+   "org": "Anthropic",
+   "talks": 19
+  },
+  {
+   "org": "OpenAI",
+   "talks": 17
+  },
+  {
+   "org": "Microsoft",
+   "talks": 17
+  },
+  {
+   "org": "Google DeepMind",
+   "talks": 12
+  },
+  {
+   "org": "McKinsey & Company",
+   "talks": 8
+  },
+  {
+   "org": "Google",
+   "talks": 7
+  },
+  {
+   "org": "Arize AI",
+   "talks": 6
+  },
+  {
+   "org": "Together AI",
+   "talks": 6
+  },
+  {
+   "org": "Amazon Web Services",
+   "talks": 6
+  },
+  {
+   "org": "Snyk",
+   "talks": 5
+  },
+  {
+   "org": "Neo4j",
+   "talks": 5
+  },
+  {
+   "org": "Unblocked",
+   "talks": 5
+  },
+  {
+   "org": "Amazon AGI Lab",
+   "talks": 5
+  },
+  {
+   "org": "Weco AI",
+   "talks": 5
+  },
+  {
+   "org": "Gradium",
+   "talks": 5
+  },
+  {
+   "org": "Oracle",
+   "talks": 4
+  },
+  {
+   "org": "WorkOS",
+   "talks": 4
+  },
+  {
+   "org": "PayPal",
+   "talks": 4
+  },
+  {
+   "org": "Hugging Face",
+   "talks": 4
+  },
+  {
+   "org": "Stripe",
+   "talks": 4
+  },
+  {
+   "org": "McKinsey",
+   "talks": 4
+  },
+  {
+   "org": "NVIDIA",
+   "talks": 4
+  },
+  {
+   "org": "Uber",
+   "talks": 4
+  },
+  {
+   "org": "Warp",
+   "talks": 4
+  },
+  {
+   "org": "r/LocalLLaMA",
+   "talks": 3
+  }
+ ],
+ "topSpeakers": [
+  {
+   "name": "Pamela Fox",
+   "talks": 6
+  },
+  {
+   "name": "Laurie Voss",
+   "talks": 5
+  },
+  {
+   "name": "Neil Zeghidour",
+   "talks": 5
+  },
+  {
+   "name": "Jason Liu",
+   "talks": 4
+  },
+  {
+   "name": "Priyanka Phatak",
+   "talks": 4
+  },
+  {
+   "name": "Gabriel Cemaj",
+   "talks": 4
+  },
+  {
+   "name": "Martin Harrysson",
+   "talks": 4
+  },
+  {
+   "name": "Matt Linderman",
+   "talks": 4
+  },
+  {
+   "name": "Prakhar Dixit",
+   "talks": 4
+  },
+  {
+   "name": "TBD",
+   "talks": 4
+  },
+  {
+   "name": "Thor 雷神 Schaeff",
+   "talks": 4
+  },
+  {
+   "name": "Arun Sekhar",
+   "talks": 3
+  },
+  {
+   "name": "Ahmad Osman",
+   "talks": 3
+  },
+  {
+   "name": "Sandhya Subramani",
+   "talks": 3
+  },
+  {
+   "name": "Idan Gazit",
+   "talks": 3
+  }
+ ],
+ "speakerStats": {
+  "uniqueSpeakers": 526,
+  "uniqueOrgs": 318,
+  "talksNoSpeaker": 49
+ },
+ "typeByDay": {
+  "Workshop Day": {
+   "SESSION": 9,
+   "SPONSOR": 28,
+   "KEYNOTE": 0,
+   "WORKSHOP": 22,
+   "SPECIAL_EVENT": 0
+  },
+  "Session Day 1": {
+   "SESSION": 131,
+   "SPONSOR": 24,
+   "KEYNOTE": 9,
+   "WORKSHOP": 0,
+   "SPECIAL_EVENT": 1
+  },
+  "Session Day 2": {
+   "SESSION": 138,
+   "SPONSOR": 25,
+   "KEYNOTE": 9,
+   "WORKSHOP": 0,
+   "SPECIAL_EVENT": 2
+  },
+  "Session Day 3": {
+   "SESSION": 130,
+   "SPONSOR": 26,
+   "KEYNOTE": 8,
+   "WORKSHOP": 0,
+   "SPECIAL_EVENT": 1
+  }
+ },
+ "topTagPairs": [
+  {
+   "pair": "agents + design-engineering",
+   "count": 253
+  },
+  {
+   "pair": "agents + software-engineering",
+   "count": 154
+  },
+  {
+   "pair": "design-engineering + software-engineering",
+   "count": 146
+  },
+  {
+   "pair": "design-engineering + memory-context",
+   "count": 134
+  },
+  {
+   "pair": "agents + memory-context",
+   "count": 133
+  },
+  {
+   "pair": "design-engineering + generative-media",
+   "count": 126
+  },
+  {
+   "pair": "agents + security",
+   "count": 107
+  },
+  {
+   "pair": "agents + retrieval-search",
+   "count": 103
+  },
+  {
+   "pair": "design-engineering + retrieval-search",
+   "count": 102
+  },
+  {
+   "pair": "agents + generative-media",
+   "count": 100
+  },
+  {
+   "pair": "agents + enterprise-ai",
+   "count": 98
+  },
+  {
+   "pair": "design-engineering + enterprise-ai",
+   "count": 95
+  },
+  {
+   "pair": "design-engineering + security",
+   "count": 93
+  },
+  {
+   "pair": "design-engineering + evals",
+   "count": 88
+  },
+  {
+   "pair": "agents + evals",
+   "count": 87
+  },
+  {
+   "pair": "memory-context + software-engineering",
+   "count": 71
+  },
+  {
+   "pair": "security + software-engineering",
+   "count": 69
+  },
+  {
+   "pair": "design-engineering + inference",
+   "count": 68
+  },
+  {
+   "pair": "memory-context + retrieval-search",
+   "count": 64
+  },
+  {
+   "pair": "agents + inference",
+   "count": 62
+  }
+ ],
+ "busiestSlots": [
+  {
+   "start": "2026-06-30T14:25",
+   "concurrent": 17
+  },
+  {
+   "start": "2026-07-01T10:45",
+   "concurrent": 17
+  },
+  {
+   "start": "2026-07-01T11:40",
+   "concurrent": 17
+  },
+  {
+   "start": "2026-07-01T14:25",
+   "concurrent": 17
+  },
+  {
+   "start": "2026-07-02T11:10",
+   "concurrent": 17
+  },
+  {
+   "start": "2026-07-02T11:40",
+   "concurrent": 17
+  },
+  {
+   "start": "2026-07-02T13:55",
+   "concurrent": 17
+  },
+  {
+   "start": "2026-06-30T10:45",
+   "concurrent": 16
+  },
+  {
+   "start": "2026-06-30T11:40",
+   "concurrent": 16
+  },
+  {
+   "start": "2026-06-30T13:30",
+   "concurrent": 16
+  },
+  {
+   "start": "2026-06-30T13:55",
+   "concurrent": 16
+  },
+  {
+   "start": "2026-06-30T15:20",
+   "concurrent": 16
+  }
+ ],
+ "scheduleStats": {
+  "distinctStartTimes": 71,
+  "maxConcurrent": 17
+ }
+}
