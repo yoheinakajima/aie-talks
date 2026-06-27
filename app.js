@@ -1139,6 +1139,7 @@ function saveSettings() {
    ============================================================ */
 async function runAsk() {
   const q = els.askInput.value.trim();
+  if (q) toggleSearchBar(true);
   if (!q) { applySpec({ search: "", note: "" }, "clear"); return; }
   const useLLM = store.get(LS.useLLM, false) && store.get(LS.apikey, "");
   els.askGo.classList.add("loading");
@@ -1177,6 +1178,15 @@ function renderSuggestions() {
 function setExamplesShown(show) {
   els.askSuggest.hidden = !show;
   els.askExamplesToggle.textContent = show ? "Hide examples" : "Show examples";
+}
+function toggleSearchBar(force) {
+  const wrap = $("ask-wrap");
+  const btn = $("btn-search");
+  const show = force === undefined ? wrap.hidden : force;
+  wrap.hidden = !show;
+  btn.classList.toggle("active", show);
+  btn.setAttribute("aria-expanded", show ? "true" : "false");
+  if (show) els.askInput.focus();
 }
 
 /* ============================================================
@@ -1548,6 +1558,7 @@ function init() {
   });
   $("btn-myevents").addEventListener("click", openMyEvents);
   $("btn-settings").addEventListener("click", openSettings);
+  $("btn-search").addEventListener("click", () => toggleSearchBar());
   $("clear-all").addEventListener("click", resetAll);
   $("empty-reset").addEventListener("click", resetAll);
 
@@ -1578,7 +1589,7 @@ function init() {
       else if (els.sidebar.classList.contains("open")) closeMobileFilters();
     }
     if (e.key === "/" && document.activeElement !== els.askInput && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
-      e.preventDefault(); els.askInput.focus();
+      e.preventDefault(); toggleSearchBar(true);
     }
   });
 }
