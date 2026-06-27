@@ -41,7 +41,7 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const els = {
   askInput: $("ask-input"), askGo: $("ask-go"), askClear: $("ask-clear"),
-  askSuggest: $("ask-suggest"), askSem: $("ask-sem"),
+  askSuggest: $("ask-suggest"), askSem: $("ask-sem"), askExamplesToggle: $("ask-examples-toggle"),
   sort: $("sort-select"), viewSwitch: $("view-switch"),
   results: $("results"), empty: $("empty-state"), resultCount: $("result-count"),
   filterPanels: $("filter-panels"), chipBar: $("chip-bar"),
@@ -1168,6 +1168,10 @@ function renderSuggestions() {
     els.askInput.value = b.dataset.suggest; els.askClear.hidden = false; runAsk();
   }));
 }
+function setExamplesShown(show) {
+  els.askSuggest.hidden = !show;
+  els.askExamplesToggle.textContent = show ? "Hide examples" : "Show examples";
+}
 
 /* ============================================================
    RESET
@@ -1525,6 +1529,7 @@ function init() {
   els.askInput.addEventListener("keydown", e => { if (e.key === "Enter") runAsk(); });
   els.askInput.addEventListener("input", () => { els.askClear.hidden = !els.askInput.value; });
   els.askClear.addEventListener("click", () => { els.askInput.value = ""; els.askClear.hidden = true; applySpec({ search: "", note: "" }, "clear"); els.askInput.focus(); });
+  els.askExamplesToggle.addEventListener("click", () => setExamplesShown(els.askSuggest.hidden));
 
   els.sort.addEventListener("change", () => { state.sort = els.sort.value; render(); });
   els.viewSwitch.querySelectorAll("button").forEach(b => b.addEventListener("click", () => { setView(b.dataset.view); render(); }));
