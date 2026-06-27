@@ -1215,7 +1215,7 @@ function fmtDate(iso) {
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 function initials(n) { return (n || "?").split(/\s+/).slice(0, 2).map(x => x[0] || "").join("").toUpperCase(); }
 function avatarColor(n) {
-  const colors = ["#5b54e6", "#c2740b", "#2f7d4f", "#7c4ddb", "#0f8a8a", "#c0392b", "#2563eb", "#b45309"];
+  const colors = ["#1e2d3e", "#c0830c", "#2c8c58", "#b0408c", "#3667cf", "#d75f3c", "#56616f", "#0f8a8a"];
   let h = 0; for (const ch of (n || "")) h = (h * 31 + ch.charCodeAt(0)) % 9973;
   return colors[h % colors.length];
 }
@@ -1242,7 +1242,7 @@ function toast(msg) {
 /* ============================================================
    VECTOR MAP  (canvas scatter of UMAP coords + clusters)
    ============================================================ */
-const TYPE_COLORS = { KEYNOTE: "#e0457b", SESSION: "#5b8def", WORKSHOP: "#37b679", SPONSOR: "#f5a623", SPECIAL_EVENT: "#9b59b6" };
+const TYPE_COLORS = { KEYNOTE: "#c0830c", SESSION: "#3667cf", WORKSHOP: "#2c8c58", SPONSOR: "#56616f", SPECIAL_EVENT: "#b0408c" };
 const DAY_COLORS = { "Workshop Day": "#f5a623", "Session Day 1": "#5b8def", "Session Day 2": "#37b679", "Session Day 3": "#e0457b" };
 const MAP = {
   ready: false, wired: false, canvas: null, ctx: null,
