@@ -1,0 +1,10 @@
+{
+  "name": "aie-talks-build",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "dependencies": {
+    "@plurnk/plurnk-mimetypes-embeddings": "^0.5.0",
+    "umap-js": "^1.4.0"
+  }
+}
