@@ -32,6 +32,7 @@ const state = {
   speaker: "",
   favOnly: false, hasAbstract: false, hideTentative: false,
   pinned: null,            // Set of ids when "filter to map selection" is active
+  timeline: false,         // timeline "play through the day" mode
   sort: "time",
   view: (() => { const v = store.get(LS.view, "map"); return v === "grid" ? "map" : v; })(),
   interpretation: null,
@@ -42,6 +43,9 @@ const $ = (id) => document.getElementById(id);
 const els = {
   askInput: $("ask-input"), askGo: $("ask-go"), askClear: $("ask-clear"),
   askSuggest: $("ask-suggest"), askSem: $("ask-sem"),
+  dayPills: $("day-pills"), timelineToggle: $("timeline-toggle"),
+  timeline: $("timeline"), tlPlay: $("tl-play"), tlRange: $("tl-range"),
+  tlTime: $("tl-time"), tlLive: $("tl-live"),
   sort: $("sort-select"), viewSwitch: $("view-switch"),
   results: $("results"), empty: $("empty-state"), resultCount: $("result-count"),
   filterPanels: $("filter-panels"), chipBar: $("chip-bar"),
@@ -496,6 +500,7 @@ function activeFilterTotal() {
 // returns talks passing all hard (non-text) filters
 function hardFilter(t) {
   if (state.pinned && !state.pinned.has(t.id)) return false;
+  if (state.timeline && TL.day && (t.dayLabel !== TL.day || !liveAt(t, TL.min))) return false;
   if (state.days.size && !state.days.has(t.dayLabel)) return false;
   if (state.types.size && !state.types.has(t.type)) return false;
   if (state.topics.size && !state.topics.has(t.topic)) return false;
@@ -575,6 +580,7 @@ function render() {
   const results = filterTalks();
   LAST_SEMONLY = new Set(results.filter(r => r._semOnly).map(r => r.t.id));
   renderResultCount(results.length);
+  renderDayPills();
   renderChips();
   renderInterpretation();
   renderFavCount();
@@ -1182,6 +1188,7 @@ function resetAll() {
   state.favOnly = state.hasAbstract = state.hideTentative = false;
   state.pinned = null;
   state.interpretation = null;
+  if (state.timeline) { state.timeline = false; els.timeline.hidden = true; els.timelineToggle.classList.remove("active"); els.timelineToggle.setAttribute("aria-pressed", "false"); tlStop(); }
   els.askInput.value = ""; els.askClear.hidden = true;
   state.sort = "time"; els.sort.value = "time";
   runSemantic("");
@@ -1231,6 +1238,94 @@ function toast(msg) {
   requestAnimationFrame(() => els.toast.classList.add("show"));
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { els.toast.classList.remove("show"); setTimeout(() => els.toast.hidden = true, 250); }, 2200);
+}
+
+/* ============================================================
+   DAY PILLS + TIMELINE  ("play through the day")
+   ============================================================ */
+const DAY_ORDER = ["Workshop Day", "Session Day 1", "Session Day 2", "Session Day 3"];
+const TL = { playing: false, timer: null, min: 0, lo: 0, hi: 0, day: null, step: 4, tickMs: 140 };
+
+function minToTime(m) {
+  m = Math.round(m); let h = Math.floor(m / 60), mm = ((m % 60) + 60) % 60;
+  const mer = h >= 12 ? "pm" : "am"; let hh = h % 12; if (hh === 0) hh = 12;
+  return `${hh}:${String(mm).padStart(2, "0")}${mer}`;
+}
+function talkStartMin(t) { return parseDT(t.startDT); }
+function talkEndMin(t) { const e = parseDT(t.endDT), s = parseDT(t.startDT); return e != null ? e : (s != null ? s + (t.dur || 30) : null); }
+function liveAt(t, min) { const s = talkStartMin(t), e = talkEndMin(t); return s != null && e != null && s <= min && min < e; }
+function daysWithTalks() { return DAY_ORDER.filter(d => TALKS.some(t => t.dayLabel === d)); }
+function activeDayForTimeline() { return state.days.size === 1 ? [...state.days][0] : (daysWithTalks()[0] || DAY_ORDER[1]); }
+function dayBounds(day) {
+  let lo = Infinity, hi = -Infinity;
+  for (const t of TALKS) { if (t.dayLabel !== day) continue; const s = talkStartMin(t), e = talkEndMin(t); if (s != null) lo = Math.min(lo, s); if (e != null) hi = Math.max(hi, e); }
+  if (lo === Infinity) { lo = 9 * 60; hi = 18 * 60; }
+  return [lo, hi];
+}
+
+let _pillSig = null;
+function renderDayPills() {
+  const sig = state.days.size === 1 ? [...state.days][0] : (state.days.size === 0 ? "__all" : "__multi");
+  if (sig === _pillSig && els.dayPills.children.length) return;
+  _pillSig = sig;
+  const metaByDay = {}; (FACETS.days || []).forEach(d => metaByDay[d.label] = d);
+  const pill = (key, label, sub, active) =>
+    `<button class="day-pill${active ? " active" : ""}" data-daypill="${escapeHtml(key)}">
+       <span class="dp-label">${escapeHtml(label)}</span>${sub ? `<span class="dp-sub">${escapeHtml(sub)}</span>` : ""}</button>`;
+  let html = pill("__all", "All days", "", state.days.size === 0);
+  for (const d of daysWithTalks()) {
+    const m = metaByDay[d] || {};
+    html += pill(d, shortDay(d), m.date ? fmtDate(m.date).replace(/^\w+,\s*/, "") : "", state.days.size === 1 && state.days.has(d));
+  }
+  els.dayPills.innerHTML = html;
+  els.dayPills.querySelectorAll("[data-daypill]").forEach(b => b.addEventListener("click", () => selectDayPill(b.dataset.daypill)));
+}
+function selectDayPill(key) {
+  if (key === "__all") state.days.clear();
+  else state.days = new Set([key]);
+  state.interpretation = null;
+  if (state.timeline) updateTimelineDay();
+  syncFilterUI(); render();
+}
+
+function toggleTimeline() {
+  state.timeline = !state.timeline;
+  els.timeline.hidden = !state.timeline;
+  els.timelineToggle.setAttribute("aria-pressed", state.timeline ? "true" : "false");
+  els.timelineToggle.classList.toggle("active", state.timeline);
+  if (state.timeline) { updateTimelineDay(); tlPlay(true); }
+  else { tlStop(); render(); }
+}
+function updateTimelineDay() {
+  TL.day = activeDayForTimeline();
+  if (!(state.days.size === 1 && state.days.has(TL.day))) { state.days = new Set([TL.day]); syncFilterUI(); renderDayPills(); }
+  const [lo, hi] = dayBounds(TL.day); TL.lo = lo; TL.hi = hi;
+  if (TL.min < lo || TL.min > hi) TL.min = lo;
+  els.tlRange.min = lo; els.tlRange.max = hi; els.tlRange.value = TL.min;
+  syncTimelineUI();
+}
+function tlPlay(on) {
+  TL.playing = on != null ? on : !TL.playing;
+  if (TL.playing && TL.min >= TL.hi) TL.min = TL.lo;
+  if (TL.timer) { clearInterval(TL.timer); TL.timer = null; }
+  if (TL.playing) TL.timer = setInterval(tlTick, TL.tickMs);
+  els.timeline.classList.toggle("playing", TL.playing);
+  syncTimelineUI();
+}
+function tlStop() { TL.playing = false; if (TL.timer) { clearInterval(TL.timer); TL.timer = null; } els.timeline.classList.remove("playing"); }
+function tlTick() {
+  TL.min += TL.step;
+  if (TL.min >= TL.hi) { TL.min = TL.hi; tlStop(); }
+  els.tlRange.value = TL.min;
+  timelineFrame();
+}
+function tlScrub(v) { tlStop(); TL.min = +v; timelineFrame(); }
+function timelineFrame() { syncTimelineUI(); render(); }
+function syncTimelineUI() {
+  els.tlTime.textContent = minToTime(TL.min);
+  const liveCount = TALKS.filter(t => t.dayLabel === TL.day && liveAt(t, TL.min)).length;
+  els.tlLive.textContent = `${liveCount} live`;
+  els.timeline.classList.toggle("playing", TL.playing);
 }
 
 /* ============================================================
@@ -1285,8 +1380,9 @@ function buildMap() {
 function sizeCanvas() {
   const stage = MAP.canvas.parentElement;
   const r = stage.getBoundingClientRect();
-  MAP.w = Math.max(320, r.width); MAP.h = Math.max(320, r.height);
-  MAP.dpr = window.devicePixelRatio || 1;
+  const w = Math.max(320, r.width), h = Math.max(320, r.height), dpr = window.devicePixelRatio || 1;
+  if (w === MAP.w && h === MAP.h && dpr === MAP.dpr) return;  // skip reallocation (e.g. timeline ticks)
+  MAP.w = w; MAP.h = h; MAP.dpr = dpr;
   MAP.canvas.width = MAP.w * MAP.dpr; MAP.canvas.height = MAP.h * MAP.dpr;
   MAP.canvas.style.width = MAP.w + "px"; MAP.canvas.style.height = MAP.h + "px";
   MAP.ctx.setTransform(MAP.dpr, 0, 0, MAP.dpr, 0, 0);
@@ -1324,13 +1420,17 @@ function drawMap() {
     ctx.beginPath(); ctx.arc(sx, sy, r * 0.8, 0, 6.2832);
     ctx.fillStyle = dark ? "rgba(120,130,150,.16)" : "rgba(120,130,150,.18)"; ctx.fill();
   }
-  // active points
+  // active points (glow when timeline mode highlights what's "live")
+  const glow = state.timeline;
   for (const p of MAP.pts) {
     if (!isActive(p)) continue;
     const [sx, sy] = worldToScreen(p.wx, p.wy);
     if (sx < -20 || sx > MAP.w + 20 || sy < -20 || sy > MAP.h + 20) continue;
-    ctx.beginPath(); ctx.arc(sx, sy, r, 0, 6.2832);
-    ctx.fillStyle = pointColor(p); ctx.globalAlpha = 0.92; ctx.fill(); ctx.globalAlpha = 1;
+    const col = pointColor(p);
+    ctx.beginPath(); ctx.arc(sx, sy, glow ? r + 1.6 : r, 0, 6.2832);
+    if (glow) { ctx.shadowColor = col; ctx.shadowBlur = 12; }
+    ctx.fillStyle = col; ctx.globalAlpha = 0.92; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
     if (MAP.selected.has(p.id)) { ctx.lineWidth = 2; ctx.strokeStyle = dark ? "#fff" : "#111"; ctx.stroke(); }
     if (favs.has(p.id)) { ctx.lineWidth = 2; ctx.strokeStyle = "#f5a623"; ctx.stroke(); }
   }
@@ -1526,6 +1626,11 @@ function init() {
   els.viewSwitch.querySelectorAll("button").forEach(b => b.addEventListener("click", () => { setView(b.dataset.view); render(); }));
   wireMapToolbar();
   if (els.askSem) els.askSem.addEventListener("click", openSettings);
+
+  // day pills + timeline
+  els.timelineToggle.addEventListener("click", toggleTimeline);
+  els.tlPlay.addEventListener("click", () => tlPlay());
+  els.tlRange.addEventListener("input", () => tlScrub(els.tlRange.value));
 
   $("btn-theme").addEventListener("click", () => {
     setTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");

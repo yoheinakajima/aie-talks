@@ -94,6 +94,26 @@
 <!-- interpretation banner -->
 <div id="interpret-banner" class="interpret-banner" hidden></div>
 
+<!-- ============ DAY PILLS + TIMELINE ============ -->
+<div class="daybar">
+  <div class="day-pills" id="day-pills"></div>
+  <button id="timeline-toggle" class="tl-toggle" aria-pressed="false" title="Play through the day">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg>
+    <span>Timeline</span>
+  </button>
+</div>
+<div id="timeline" class="timeline" hidden>
+  <button id="tl-play" class="tl-play" aria-label="Play / pause">
+    <svg class="i-play" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+    <svg class="i-pause" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+  </button>
+  <input id="tl-range" class="tl-range" type="range" min="0" max="100" value="0" step="1" aria-label="Time of day" />
+  <div class="tl-readout">
+    <span id="tl-time" class="tl-time">—</span>
+    <span id="tl-live" class="tl-live"></span>
+  </div>
+</div>
+
 <!-- ============ MAIN ============ -->
 <div class="layout">
   <aside id="sidebar" class="sidebar">
