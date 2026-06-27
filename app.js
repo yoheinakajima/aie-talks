@@ -516,15 +516,22 @@ function hardFilter(t) {
 function filterTalks() {
   const terms = tokenize(state.search);
   const sem = semScoresCurrent();
-  const hasQuery = !!((state.semQuery || "").trim()) && (terms.length > 0 || !!sem);
+  // Free-text relevance intent — only true when the query carries actual search
+  // words. A purely structural request (speaker / tag / day / type filter with no
+  // free text, e.g. searching a person's name that the parser routed to `speaker`)
+  // must return EVERY talk that passes the hard filters. Semantic similarity may
+  // reorder those talks, but it must never exclude them: a name like "Yohei" has
+  // no semantic signal, so gating on the cosine threshold would drop the very
+  // talk the user filtered to.
+  const hasText = terms.length > 0;
   const cands = [];
   for (const t of TALKS) {
     if (!hardFilter(t)) continue;
-    const lex = terms.length ? scoreTalk(t, terms) : 0;
+    const lex = hasText ? scoreTalk(t, terms) : 0;
     const ss = sem ? (sem.get(t.id) ?? 0) : null;
     cands.push({ t, lex, ss, score: 0, _sem: ss, _semOnly: false });
   }
-  if (!hasQuery) { sortResults(cands, false); return cands; }
+  if (!hasText) { sortResults(cands, false); return cands; }
 
   // Reciprocal Rank Fusion of the lexical and semantic orderings
   const lexRanked = cands.filter(c => c.lex > 0).sort((a, b) => b.lex - a.lex);
