@@ -33,7 +33,7 @@ const state = {
   favOnly: false, hasAbstract: false, hideTentative: false,
   pinned: null,            // Set of ids when "filter to map selection" is active
   sort: "time",
-  view: store.get(LS.view, "agenda"),
+  view: (() => { const v = store.get(LS.view, "map"); return v === "grid" ? "map" : v; })(),
   interpretation: null,
 };
 
@@ -348,9 +348,10 @@ function localParse(qRaw) {
   if (/longest|long.*first/.test(q)) spec.sort = "durDesc";
   if (/most relevant|best match/.test(q)) spec.sort = "relevance";
   // view
-  if (/\bgrid\b/.test(q)) spec.view = "grid";
+  if (/\bmap|cluster|landscape\b/.test(q)) spec.view = "map";
   if (/\bcompact|dense|table\b/.test(q)) spec.view = "compact";
   if (/\bagenda|by day|timeline\b/.test(q)) spec.view = "agenda";
+  if (/\blist\b/.test(q)) spec.view = "list";
   // favorites
   if (/my favorite|favourited|favorited|my events|saved|my schedule/.test(q)) spec.favOnly = true;
 
@@ -430,7 +431,7 @@ Return ONLY a JSON object, no prose. Schema:
  "durations": string[],      // any of: "lightning","standard","long","workshop"
  "speaker": string,          // a speaker or organization name if specified
  "sort": string,             // one of: "time","relevance","title","durAsc","durDesc","track" or ""
- "view": string,             // one of: "agenda","list","grid","compact" or ""
+ "view": string,             // one of: "agenda","list","compact","map" or ""
  "favOnly": boolean,
  "note": string              // a short friendly summary of how you interpreted the request
 }
@@ -449,7 +450,7 @@ function normalizeLLMSpec(s, qRaw) {
     durations: arr(s.durations).filter(t => ["lightning","standard","long","workshop"].includes(t)),
     speaker: typeof s.speaker === "string" ? s.speaker : "",
     sort: ["time","relevance","title","durAsc","durDesc","track"].includes(s.sort) ? s.sort : null,
-    view: ["agenda","list","grid","compact"].includes(s.view) ? s.view : null,
+    view: ["agenda","list","compact","map"].includes(s.view) ? s.view : null,
     favOnly: !!s.favOnly,
     note: typeof s.note === "string" ? s.note : "",
   };
@@ -1096,6 +1097,9 @@ function hideDrawer(drawer, scrim) {
 function setView(v, save = true) {
   state.view = v;
   els.viewSwitch.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.view === v));
+  // sorting is meaningless on the spatial map — hide the control there
+  const sortCtl = els.sort.closest(".sort-control");
+  if (sortCtl) sortCtl.style.display = v === "map" ? "none" : "";
   if (save) store.set(LS.view, v);
 }
 function setTheme(t) {

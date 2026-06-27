@@ -33,10 +33,10 @@ Every talk's detail drawer shows its **theme cluster** and a **Related talks** s
 - Filters combine with live, removable chips and a result counter.
 - **Sort** by time, relevance, title, duration, or track.
 
-### 🗂 Four views
-- **Agenda** — grouped by day with time rails (default)
+### 🗂 Views
+- **Map** — the vector cluster explorer (default; see above)
+- **Agenda** — grouped by day with time rails
 - **List** — rich cards with abstract previews
-- **Grid** — responsive card gallery
 - **Compact** — dense scannable rows
 
 ### ⭐ My Events (personal schedule)
