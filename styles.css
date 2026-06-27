@@ -674,6 +674,7 @@ mark { background: color-mix(in srgb, var(--accent-soft) 80%, #fde68a); color: i
   background: color-mix(in srgb, var(--surface) 86%, transparent); backdrop-filter: blur(6px);
   border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px;
 }
+.leg-body { display: flex; flex-direction: column; gap: 2px; }
 .leg-item {
   display: flex; align-items: center; gap: 7px; text-align: left;
   font-size: 11.5px; color: var(--ink-2); padding: 3px 5px; border-radius: 6px; cursor: pointer; background: none; border: none;
@@ -681,6 +682,14 @@ mark { background: color-mix(in srgb, var(--accent-soft) 80%, #fde68a); color: i
 .leg-item:hover { background: var(--surface-2); }
 .leg-item.muted { opacity: .4; text-decoration: line-through; }
 .leg-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+/* Toggle header is hidden on web — the legend is always expanded there. */
+.leg-toggle {
+  display: none; align-items: center; justify-content: space-between; gap: 6px; width: 100%;
+  font-size: 11px; font-weight: 600; color: var(--ink-2); padding: 2px 3px;
+  background: none; border: none; cursor: pointer;
+}
+.leg-caret { transition: transform .15s ease; }
+.map-legend.open .leg-caret { transform: rotate(180deg); }
 
 .map-loading {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -697,4 +706,8 @@ mark { background: color-mix(in srgb, var(--accent-soft) 80%, #fde68a); color: i
   .map-stage { height: 62vh; min-height: 360px; }
   .map-tb-hint { display: none; }
   .map-legend { max-width: 150px; font-size: 10.5px; }
+  /* On mobile the legend collapses to a small toggle so it stops covering the map. */
+  .map-legend .leg-toggle { display: flex; }
+  .map-legend.collapsed { max-width: none; width: auto; }
+  .map-legend.collapsed .leg-body { display: none; }
 }

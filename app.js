@@ -1448,9 +1448,22 @@ function buildMapLegend() {
   if (MAP.colorMode === "type") items = Object.keys(TYPE_COLORS).map(k => ({ key: k, label: typeLabel(k), color: TYPE_COLORS[k] }));
   else if (MAP.colorMode === "day") items = Object.keys(DAY_COLORS).map(k => ({ key: k, label: shortDay(k), color: DAY_COLORS[k] }));
   else items = MAP.centroids.slice().sort((a, b) => b.n - a.n).map(c => ({ key: String(c.cluster), label: c.label, color: MAP.clusterColors[c.cluster] }));
-  host.innerHTML = items.map(it =>
+  const wasOpen = host.classList.contains("open");
+  if (!host.classList.contains("collapsed") && !wasOpen) host.classList.add("collapsed");
+  const body = items.map(it =>
     `<button class="leg-item${MAP.muted.has(it.key) ? " muted" : ""}" data-leg="${escapeHtml(it.key)}">
       <span class="leg-dot" style="background:${it.color}"></span>${escapeHtml(it.label)}</button>`).join("");
+  host.innerHTML =
+    `<button class="leg-toggle" data-leg-toggle aria-expanded="${wasOpen ? "true" : "false"}">
+      <span>Legend</span>
+      <svg class="leg-caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div class="leg-body">${body}</div>`;
+  host.querySelector("[data-leg-toggle]").addEventListener("click", () => {
+    const open = host.classList.toggle("open");
+    host.classList.toggle("collapsed", !open);
+    host.querySelector("[data-leg-toggle]").setAttribute("aria-expanded", open ? "true" : "false");
+  });
   host.querySelectorAll("[data-leg]").forEach(b => b.addEventListener("click", () => {
     const k = b.dataset.leg; if (MAP.muted.has(k)) MAP.muted.delete(k); else MAP.muted.add(k);
     b.classList.toggle("muted"); drawMap();
