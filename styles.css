@@ -126,6 +126,7 @@ button { font-family: inherit; cursor: pointer; }
   transition: .15s ease;
 }
 .icon-btn:hover { border-color: var(--border-2); color: var(--ink); transform: translateY(-1px); }
+.icon-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .i-moon { display: none; }
 [data-theme="dark"] .i-sun { display: none; }
 [data-theme="dark"] .i-moon { display: block; }
