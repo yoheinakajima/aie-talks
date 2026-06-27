@@ -1430,11 +1430,16 @@ function wireMap() {
   cv.addEventListener("wheel", e => {
     e.preventDefault();
     const [mx, my] = relPos(e);
-    const f = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    // proportional zoom (smooth for trackpad pinch = ctrl+wheel, and mouse wheel)
+    const f = Math.exp(-e.deltaY * 0.0015);
     const ns = Math.min(40, Math.max(0.6, MAP.tf.scale * f));
     const k = ns / MAP.tf.scale;
-    // keep cursor anchored
-    MAP.tf.x = mx - (mx - MAP.tf.x) * k; MAP.tf.y = my - (my - MAP.tf.y) * k;
+    // anchor the zoom on the pointer. worldToScreen adds a fixed canvas-center
+    // offset that is NOT part of tf, so it must be included here or the zoom
+    // drifts toward a corner.
+    const cxC = MAP.w / 2, cyC = MAP.h / 2;
+    MAP.tf.x = mx - cxC - (mx - cxC - MAP.tf.x) * k;
+    MAP.tf.y = my - cyC - (my - cyC - MAP.tf.y) * k;
     MAP.tf.scale = ns; drawMap();
   }, { passive: false });
 }
